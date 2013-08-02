@@ -1,0 +1,167 @@
+/*
+ *  Copyright 2013 Argent Pickle Software. All Rights Reserved.
+ *
+ *  In its constructor, walks the Windows device list, obtaining 
+ *  names of USB devices and initializing list contents with same.
+ *
+ *  Revisions
+ *  20130514    sbg     created
+ *
+ */
+package argentpickle.devices;
+
+import java.util.ArrayList;
+import com.sun.jna.Memory;
+import com.sun.jna.Native;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.win32.StdCallLibrary;
+import com.sun.jna.platform.win32.*;
+import com.sun.jna.platform.win32.SetupApi.*;
+
+public class DeviceList extends ArrayList<String>
+{
+    //  platform.jar doesn't have all the functions we need;
+    //  SetupDiEnumDeviceInfo() is missing.
+    //  so we define it here.
+    private interface SetupApiEx extends StdCallLibrary
+    {
+        //  specify the underlying dll
+        SetupApiEx INSTANCE = (SetupApiEx)Native.loadLibrary( "setupapi", SetupApiEx.class );
+
+        //  specify the needed functions
+        public boolean SetupDiEnumDeviceInfo( WinNT.HANDLE hDevInfo, 
+                                                int MemberIndex, 
+                                                SetupApi.SP_DEVINFO_DATA devInfoData );
+        public boolean SetupDiDestroyDeviceInfoList( WinNT.HANDLE hDevInfo );
+    }
+
+    //  useful constants
+    private final int SPDRP_FRIENDLYNAME = 12;
+    private final int BUFSIZE_DEFAULT = 1024;
+
+    public DeviceList()
+    {
+        //  nothing particular to do on init, 
+        //  but do a clear() to ensure known state of list
+        clear();
+    }
+
+    //  refresh self from current device list in registry
+    public void RefreshUSB()
+    {
+        refresh_class( "USB" );
+    }
+
+    public void RefreshHID()
+    {
+        refresh_class( "HID" );
+    }
+
+    public void RefreshPCI()
+    {
+        refresh_class( "PCI" );
+    }
+
+    public void RefreshAll()
+    {
+        refresh_class( "" );
+    }
+
+    private void refresh_class( String deviceClass )
+    {
+        //  remove any existing elements from own list
+        clear();
+
+        //  retrieve devices known by system, in preparation for walking the list
+        WinNT.HANDLE hDevInfo = null;
+        if ( deviceClass.isEmpty() )
+        {
+            hDevInfo = SetupApi.INSTANCE.SetupDiGetClassDevs( null, 
+                                                                null,
+                                                                null, 
+                                                                SetupApi.DIGCF_ALLCLASSES );
+        }
+        else
+        {
+            Memory enumMem = new Memory( BUFSIZE_DEFAULT );
+            enumMem.clear();
+            //enumMem.setString( 0, "USB\0", true );
+            enumMem.setString( 0, deviceClass + "\0", true );
+            hDevInfo = SetupApi.INSTANCE.SetupDiGetClassDevs( null, 
+                                                                enumMem,
+                                                                null, 
+                                                                SetupApi.DIGCF_ALLCLASSES );
+            enumMem.clear();
+        }
+
+        if ( !(hDevInfo.equals( -1 )) )
+        {
+            SetupApi.SP_DEVINFO_DATA info;
+            SetupApi.SP_DEVINFO_DATA.ByReference infoRef;
+            Memory buf;
+            for ( int nDev = 0; nDev < Integer.MAX_VALUE; nDev++ )
+            {
+                //  create, initialize struct to receive device info
+                info = new SetupApi.SP_DEVINFO_DATA();
+                info.clear();
+                info.cbSize = info.size();
+
+                //  get device info for enumerated device; returns false when no more devices
+                if ( false == SetupApiEx.INSTANCE.SetupDiEnumDeviceInfo( hDevInfo, nDev, info ) )
+                {
+                    add( "(end of list)" );
+                    break;
+                }
+
+                //  copy the SP_DEVINFO_DATA contents into a ByReference object for this call
+                infoRef = new SetupApi.SP_DEVINFO_DATA.ByReference();
+                infoRef.writeField( "cbSize", info.cbSize );
+                infoRef.writeField( "DevInst", info.DevInst );
+                infoRef.writeField( "InterfaceClassGuid", info.InterfaceClassGuid );
+                infoRef.writeField( "Reserved", info.Reserved );
+                //  set up remaining parameters for retrieving the friendly name
+                buf = new Memory( BUFSIZE_DEFAULT );
+                buf.clear();
+                IntByReference refReqBufSize = new IntByReference();
+                boolean api_result = SetupApi.INSTANCE.SetupDiGetDeviceRegistryProperty( hDevInfo, 
+                                                                                            infoRef,
+                                                                                            SPDRP_FRIENDLYNAME,
+                                                                                            null, 
+                                                                                            buf,
+                                                                                            BUFSIZE_DEFAULT,
+                                                                                            refReqBufSize );
+                if ( api_result )
+                {
+                    //  it's unlikely we'll encounter a device with a name exceeding 512 wide characters
+                    //  (1024 bytes -aka- BUFSIZE_DEFAULT), but just in case, handle the possibility
+                    if ( refReqBufSize.getValue() > BUFSIZE_DEFAULT )
+                    {
+                        //  pad the buffer size requirement a bit for null termination
+                        int bufsize = refReqBufSize.getValue() + 4;
+                        buf = new Memory( bufsize );
+                        //  and repeat the call with the larger buffer
+                        api_result = SetupApi.INSTANCE.SetupDiGetDeviceRegistryProperty( hDevInfo, 
+                                                                                            infoRef,
+                                                                                            SPDRP_FRIENDLYNAME,
+                                                                                            null, 
+                                                                                            buf,
+                                                                                            bufsize,
+                                                                                            refReqBufSize );
+                    }   
+                }
+                if ( api_result && refReqBufSize.getValue() > 0 )
+                {
+                    String friendlyName = buf.getString( 0, true );
+                    add( friendlyName );
+                }
+            }       // for ( nDev )
+            //  clean up after ourselves; Win32 expects a lot of the developer that way
+            SetupApiEx.INSTANCE.SetupDiDestroyDeviceInfoList( hDevInfo );
+        }       // if ( hDevInfo )
+    }       //  public void Refresh()
+
+}       //  public class DeviceList...
+
+/*
+ *  vim: set nolinebreak ts=4 sw=4 et:
+ */

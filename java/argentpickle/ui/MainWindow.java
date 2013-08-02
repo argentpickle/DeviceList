@@ -1,0 +1,159 @@
+/*
+ *  Copyright 2013 Argent Pickle Software. All Rights Reserved.
+ * 
+ *  Main UI window demonstrating use of DeviceList,
+ *  which lists USB devices known to the system
+ *
+ *  Revisions
+ *  20130513    sbg     created
+ *  20130514    sbg     added labels, added access to DeviceList
+ */
+package argentpickle.ui;
+
+import javax.swing.*;
+import argentpickle.devices.*;
+
+public class MainWindow extends javax.swing.JFrame
+{
+    public MainWindow()
+    {
+        initComponents();
+    }
+
+    private void initComponents()
+    {
+        refreshUSBButton = new JButton();
+        refreshPCIButton = new JButton();
+        refreshAllButton = new JButton();
+        explanatory_caption = new JLabel();
+        usb_labels  = new JLabel[MAX_LABELS];
+        /* 
+         *  can't use the for( JLabel l : usb_labels ) syntax here; 
+         *  that syntax assigns the new JLabels into each l,
+         *  but not into the underlying array.
+         */
+        for ( int i = 0; i < MAX_LABELS; i++ )
+        {
+            usb_labels[i] = new JLabel();
+        }
+
+        setDefaultCloseOperation( WindowConstants.EXIT_ON_CLOSE );
+
+        refreshUSBButton.setText( "Refresh USB" );
+        refreshPCIButton.setText( "Refresh PCI" );
+        refreshAllButton.setText( "Refresh All" );
+        
+        refreshUSBButton.addActionListener( 
+            new java.awt.event.ActionListener()
+            {
+                public void actionPerformed( java.awt.event.ActionEvent evt )
+                {
+                    refreshButtonActionPerformed( evt, BUTTON_TYPE_USB );
+                }
+            }
+        );
+        refreshPCIButton.addActionListener(
+            new java.awt.event.ActionListener()
+            {
+                public void actionPerformed( java.awt.event.ActionEvent evt )
+                {
+                    refreshButtonActionPerformed( evt, BUTTON_TYPE_PCI );
+                }
+            }
+        );
+        refreshAllButton.addActionListener(
+            new java.awt.event.ActionListener()
+            {
+                public void actionPerformed( java.awt.event.ActionEvent evt ) 
+                {
+                    refreshButtonActionPerformed( evt, BUTTON_TYPE_ALL );
+                }
+            }
+        );
+
+        java.awt.Container thisPane = getContentPane();
+        BoxLayout layout = new BoxLayout( thisPane, BoxLayout.PAGE_AXIS );
+        thisPane.setLayout( layout );
+
+        thisPane.add( explanatory_caption );
+        for ( JLabel l : usb_labels )
+        {
+            thisPane.add( l );
+        }
+        thisPane.add( refreshUSBButton );
+        thisPane.add( refreshPCIButton );
+        thisPane.add( refreshAllButton );
+
+        devices = new DeviceList();
+
+        // update the display via the same method as is called by the Refresh USB button
+        updateUI( BUTTON_TYPE_USB );
+    }       //  private void initComponents();
+
+    private void refreshButtonActionPerformed( java.awt.event.ActionEvent evt, int type )
+    {
+        updateUI( type );
+    }
+
+    /*
+     *  retrieve list of attached devices and display in UI
+     */
+    private void updateUI( int type )
+    {
+        //  retrieve device list 
+        switch ( type )
+        {
+            case BUTTON_TYPE_USB:
+                devices.RefreshUSB();
+                explanatory_caption.setText( "The following USB devices are known to this system:" );
+                setTitle( "USB Devices" );
+                break;
+            case BUTTON_TYPE_PCI:
+                devices.RefreshPCI();
+                explanatory_caption.setText( "The following PCI devices are known to this system:" );
+                setTitle( "PCI Devices" );
+                break;
+            case BUTTON_TYPE_ALL:
+            default:
+                devices.RefreshAll();
+                explanatory_caption.setText( "The following devices are known to this system:" );
+                setTitle( "All Devices" );
+                break;
+        }
+
+        //  update UI, clearing labels which run off the end of the device list
+        for ( int i = 0; i < MAX_LABELS; i++ )
+        {
+            usb_labels[i].setText( i < devices.size() ? devices.get( i ) : "" );
+        }
+        pack();
+    }
+
+    public static void main( String[] args )
+    {
+        java.awt.EventQueue.invokeLater(
+            new Runnable() 
+            {
+                public void run()
+                {
+                    new MainWindow().setVisible( true );
+                }
+            }
+        );
+    }
+
+    private final int MAX_LABELS = 10;
+    private final int BUTTON_TYPE_USB = 0;
+    private final int BUTTON_TYPE_PCI = 1;
+    private final int BUTTON_TYPE_ALL = 2;
+    private JButton refreshUSBButton;
+    private JButton refreshPCIButton;
+    private JButton refreshAllButton;
+    private JLabel explanatory_caption;
+    private JLabel[] usb_labels;
+    private DeviceList devices;
+}       //  public class MainWindow...
+
+/*
+ * vim: set nolinebreak ts=4 sw=4 et: 
+ */
